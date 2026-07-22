@@ -2,11 +2,11 @@
 // ASHA Family Tracker — app logic
 // Uses Supabase (auth + Postgres) as the backend.
 // ============================================================
-
+ 
 const root = document.getElementById("root");
-let supabase = null;
+let sb = null;
 let session = null;
-
+ 
 const state = {
   tab: "add",
   families: [],        // [{id, house_no, house_name, address, area, description}]
@@ -23,7 +23,7 @@ const state = {
   editingMemberKey: null, // `${familyId}:${memberId}`
   addingMemberFor: null,  // familyId currently adding a member to
 };
-
+ 
 const ROLE_OPTIONS = ["Ration Card Head", "Family Member"];
 const GENDER_OPTIONS = ["Male", "Female", "Other"];
 const AGE_PRESETS = [
@@ -33,7 +33,7 @@ const AGE_PRESETS = [
   { label: "Middle age (41–60)", min: 41, max: 60 },
   { label: "Senior (60+)", min: 60, max: 150 },
 ];
-
+ 
 function toast(msg) {
   const t = document.createElement("div");
   t.className = "toast";
@@ -41,7 +41,7 @@ function toast(msg) {
   document.body.appendChild(t);
   setTimeout(() => t.remove(), 2600);
 }
-
+ 
 function escapeHtml(str) {
   if (str === null || str === undefined) return "";
   return String(str)
@@ -50,7 +50,7 @@ function escapeHtml(str) {
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;");
 }
-
+ 
 // ------------------------------------------------------------
 // BOOTSTRAP
 // ------------------------------------------------------------
@@ -59,9 +59,9 @@ function init() {
     renderSetupNeeded();
     return;
   }
-  supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-
-  supabase.auth.getSession().then(({ data }) => {
+  sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+ 
+  sb.auth.getSession().then(({ data }) => {
     session = data.session;
     if (session) {
       loadData();
@@ -69,8 +69,8 @@ function init() {
       renderLogin();
     }
   });
-
-  supabase.auth.onAuthStateChange((_event, newSession) => {
+ 
+  sb.auth.onAuthStateChange((_event, newSession) => {
     session = newSession;
     if (session) {
       loadData();
@@ -79,7 +79,7 @@ function init() {
     }
   });
 }
-
+ 
 function renderSetupNeeded() {
   root.innerHTML = `
     <div class="center-screen">
@@ -92,7 +92,7 @@ function renderSetupNeeded() {
       </div>
     </div>`;
 }
-
+ 
 // ------------------------------------------------------------
 // AUTH SCREENS
 // ------------------------------------------------------------
@@ -123,55 +123,55 @@ function renderLogin(mode = "login", errorMsg = "") {
         </div>
       </div>
     </div>`;
-
+ 
   document.getElementById("auth-form").addEventListener("submit", async (e) => {
     e.preventDefault();
     const email = document.getElementById("auth-email").value.trim();
     const password = document.getElementById("auth-password").value;
     if (mode === "login") {
-      const { error } = await supabase.auth.signInWithPassword({ email, password });
+      const { error } = await sb.auth.signInWithPassword({ email, password });
       if (error) renderLogin("login", error.message);
     } else {
-      const { error } = await supabase.auth.signUp({ email, password });
+      const { error } = await sb.auth.signUp({ email, password });
       if (error) renderLogin("signup", error.message);
       else renderLogin("login", "Account created. If email confirmation is on, check your inbox, then sign in.");
     }
   });
-
+ 
   const toSignup = document.getElementById("to-signup");
   const toLogin = document.getElementById("to-login");
   if (toSignup) toSignup.addEventListener("click", () => renderLogin("signup"));
   if (toLogin) toLogin.addEventListener("click", () => renderLogin("login"));
 }
-
+ 
 // ------------------------------------------------------------
 // DATA LOADING
 // ------------------------------------------------------------
 async function loadData() {
   root.innerHTML = `<div class="center-screen"><p>Loading your records…</p></div>`;
-  const { data: families, error: famErr } = await supabase
+  const { data: families, error: famErr } = await sb
     .from("families")
     .select("*")
     .order("created_at", { ascending: false });
-  const { data: members, error: memErr } = await supabase
+  const { data: members, error: memErr } = await sb
     .from("members")
     .select("*");
-
+ 
   if (famErr || memErr) {
     root.innerHTML = `<div class="center-screen"><div class="auth-card"><h1>Couldn't load data</h1><p class="sub">${escapeHtml((famErr || memErr).message)}</p></div></div>`;
     return;
   }
-
+ 
   state.families = families || [];
   state.membersByFamily = {};
   (members || []).forEach((m) => {
     if (!state.membersByFamily[m.family_id]) state.membersByFamily[m.family_id] = [];
     state.membersByFamily[m.family_id].push(m);
   });
-
+ 
   renderShell();
 }
-
+ 
 // ------------------------------------------------------------
 // SHELL / NAV
 // ------------------------------------------------------------
@@ -190,7 +190,7 @@ function renderShell() {
       </div>
       <div class="main" id="main"></div>
     </div>`;
-
+ 
   document.querySelectorAll(".nav-btn").forEach((b) =>
     b.addEventListener("click", () => {
       state.tab = b.dataset.tab;
@@ -198,18 +198,18 @@ function renderShell() {
     })
   );
   document.getElementById("logout-btn").addEventListener("click", async () => {
-    await supabase.auth.signOut();
+    await sb.auth.signOut();
   });
   document.querySelectorAll(".nav-btn").forEach((b) => {
     if (b.dataset.tab === state.tab) b.classList.add("active");
   });
-
+ 
   const main = document.getElementById("main");
   if (state.tab === "add") renderAddTab(main);
   else if (state.tab === "view") renderViewTab(main);
   else if (state.tab === "export") renderExportTab(main);
 }
-
+ 
 // ------------------------------------------------------------
 // ADD FAMILY TAB
 // ------------------------------------------------------------
@@ -238,7 +238,7 @@ function memberFormRow(idx, data = {}) {
       </div>
     </div>`;
 }
-
+ 
 function renderAddTab(main) {
   if (!state.addMemberDraftCount) state.addMemberDraftCount = 1;
   main.innerHTML = `
@@ -265,7 +265,7 @@ function renderAddTab(main) {
       <button type="submit" class="btn btn-primary">Save family</button>
     </form>
   `;
-
+ 
   document.getElementById("add-member-row").addEventListener("click", () => {
     state.addMemberDraftCount += 1;
     document.getElementById("members-container").insertAdjacentHTML(
@@ -275,7 +275,7 @@ function renderAddTab(main) {
     attachRemoveHandlers();
   });
   attachRemoveHandlers();
-
+ 
   function attachRemoveHandlers() {
     document.querySelectorAll(".remove-member").forEach((btn) => {
       btn.onclick = () => {
@@ -284,7 +284,7 @@ function renderAddTab(main) {
       };
     });
   }
-
+ 
   document.getElementById("family-form").addEventListener("submit", async (e) => {
     e.preventDefault();
     const fd = new FormData(e.target);
@@ -295,14 +295,14 @@ function renderAddTab(main) {
       address: fd.get("address")?.trim() || null,
       description: fd.get("description")?.trim() || null,
     };
-
-    const { data: famRows, error: famErr } = await supabase
+ 
+    const { data: famRows, error: famErr } = await sb
       .from("families")
       .insert(familyPayload)
       .select();
     if (famErr) { toast("Error saving household: " + famErr.message); return; }
     const familyId = famRows[0].id;
-
+ 
     const memberRows = [];
     document.querySelectorAll(".member-row").forEach((row) => {
       const idx = row.dataset.idx;
@@ -320,12 +320,12 @@ function renderAddTab(main) {
         disease: fd.get(`m_disease_${idx}`)?.trim() || null,
       });
     });
-
+ 
     if (memberRows.length) {
-      const { error: memErr } = await supabase.from("members").insert(memberRows);
+      const { error: memErr } = await sb.from("members").insert(memberRows);
       if (memErr) { toast("Household saved, but members failed: " + memErr.message); }
     }
-
+ 
     toast("Family saved.");
     state.addMemberDraftCount = 1;
     await loadData();
@@ -333,7 +333,7 @@ function renderAddTab(main) {
     renderShell();
   });
 }
-
+ 
 // ------------------------------------------------------------
 // VIEW & MANAGE TAB
 // ------------------------------------------------------------
@@ -342,19 +342,19 @@ function getFilteredSortedFamilies() {
   let list = state.families.filter((f) => {
     const members = state.membersByFamily[f.id] || [];
     if (state.filterArea && f.area !== state.filterArea) return false;
-
+ 
     if (state.ageMin !== "" || state.ageMax !== "") {
       const min = state.ageMin !== "" ? parseInt(state.ageMin, 10) : 0;
       const max = state.ageMax !== "" ? parseInt(state.ageMax, 10) : 999;
       const hasAgeMatch = members.some((m) => m.age !== null && m.age >= min && m.age <= max);
       if (!hasAgeMatch) return false;
     }
-
+ 
     if (state.diseaseOnly) {
       const hasDisease = members.some((m) => m.disease && m.disease.trim() && m.disease.trim().toLowerCase() !== "none");
       if (!hasDisease) return false;
     }
-
+ 
     if (q) {
       const haystack = [
         f.house_no, f.house_name, f.address, f.area, f.description,
@@ -364,7 +364,7 @@ function getFilteredSortedFamilies() {
     }
     return true;
   });
-
+ 
   const cmp = {
     house_name_asc: (a, b) => (a.house_name || "").localeCompare(b.house_name || ""),
     house_name_desc: (a, b) => (b.house_name || "").localeCompare(a.house_name || ""),
@@ -374,29 +374,29 @@ function getFilteredSortedFamilies() {
   }[state.sortBy];
   return list.sort(cmp);
 }
-
+ 
 function uniqueAreas() {
   return [...new Set(state.families.map((f) => f.area).filter(Boolean))].sort();
 }
-
+ 
 function renderViewTab(main) {
   const list = getFilteredSortedFamilies();
   const totalMembers = Object.values(state.membersByFamily).reduce((s, arr) => s + arr.length, 0);
   const diseasedCount = Object.values(state.membersByFamily).flat().filter(
     (m) => m.disease && m.disease.trim() && m.disease.trim().toLowerCase() !== "none"
   ).length;
-
+ 
   main.innerHTML = `
     <h2 class="page-title">View &amp; manage families</h2>
     <p class="page-sub">Search, sort, filter, or edit any household and its members.</p>
-
+ 
     <div class="stat-row">
       <div class="stat"><span class="num">${state.families.length}</span><span class="lbl">Households</span></div>
       <div class="stat"><span class="num">${totalMembers}</span><span class="lbl">People</span></div>
       <div class="stat"><span class="num">${diseasedCount}</span><span class="lbl">With a health condition</span></div>
       <div class="stat"><span class="num">${uniqueAreas().length}</span><span class="lbl">Areas</span></div>
     </div>
-
+ 
     <div class="panel">
       <div class="toolbar">
         <div class="field grow">
@@ -431,10 +431,10 @@ function renderViewTab(main) {
         <div class="field"><button id="f-clear" class="btn btn-ghost btn-sm">Clear filters</button></div>
       </div>
     </div>
-
+ 
     <div id="family-list"></div>
   `;
-
+ 
   document.getElementById("f-search").addEventListener("input", (e) => { state.search = e.target.value; renderViewTab(main); });
   document.getElementById("f-sort").addEventListener("change", (e) => { state.sortBy = e.target.value; renderViewTab(main); });
   document.getElementById("f-area").addEventListener("change", (e) => { state.filterArea = e.target.value; renderViewTab(main); });
@@ -445,7 +445,7 @@ function renderViewTab(main) {
     state.search = ""; state.filterArea = ""; state.ageMin = ""; state.ageMax = ""; state.diseaseOnly = false;
     renderViewTab(main);
   });
-
+ 
   const listEl = document.getElementById("family-list");
   if (!list.length) {
     listEl.innerHTML = `<div class="panel"><p style="margin:0;color:var(--ink-soft);">No households match. Try clearing filters, or add your first family.</p></div>`;
@@ -454,11 +454,11 @@ function renderViewTab(main) {
   listEl.innerHTML = list.map((f) => renderFamilyCard(f)).join("");
   attachFamilyCardHandlers(main);
 }
-
+ 
 function renderFamilyCard(f) {
   const members = state.membersByFamily[f.id] || [];
   const isEditing = state.editingFamilyId === f.id;
-
+ 
   if (isEditing) {
     return `
       <div class="family-card">
@@ -477,7 +477,7 @@ function renderFamilyCard(f) {
         </div>
       </div>`;
   }
-
+ 
   return `
     <div class="family-card">
       <div class="family-head">
@@ -504,7 +504,7 @@ function renderFamilyCard(f) {
       </div>
     </div>`;
 }
-
+ 
 function renderMemberRow(familyId, m) {
   const key = `${familyId}:${m.id}`;
   if (state.editingMemberKey === key) {
@@ -543,7 +543,7 @@ function renderMemberRow(familyId, m) {
       </td>
     </tr>`;
 }
-
+ 
 function renderAddMemberInline(familyId) {
   if (state.addingMemberFor !== familyId) {
     return `<button class="btn btn-ghost btn-sm add-member-btn" data-family="${familyId}" style="margin-top:10px;">＋ Add member to this family</button>`;
@@ -566,7 +566,7 @@ function renderAddMemberInline(familyId) {
       </div>
     </div>`;
 }
-
+ 
 function attachFamilyCardHandlers(main) {
   document.querySelectorAll(".edit-family").forEach((b) => b.addEventListener("click", () => {
     state.editingFamilyId = b.dataset.id; renderViewTab(main);
@@ -584,7 +584,7 @@ function attachFamilyCardHandlers(main) {
       description: card.querySelector(".ef-description").value.trim() || null,
       updated_at: new Date().toISOString(),
     };
-    const { error } = await supabase.from("families").update(payload).eq("id", b.dataset.id);
+    const { error } = await sb.from("families").update(payload).eq("id", b.dataset.id);
     if (error) { toast("Error: " + error.message); return; }
     state.editingFamilyId = null;
     toast("Household updated.");
@@ -592,12 +592,12 @@ function attachFamilyCardHandlers(main) {
   }));
   document.querySelectorAll(".delete-family").forEach((b) => b.addEventListener("click", async () => {
     if (!confirm("Delete this household and all its members? This cannot be undone.")) return;
-    const { error } = await supabase.from("families").delete().eq("id", b.dataset.id);
+    const { error } = await sb.from("families").delete().eq("id", b.dataset.id);
     if (error) { toast("Error: " + error.message); return; }
     toast("Household deleted.");
     await loadData();
   }));
-
+ 
   document.querySelectorAll(".edit-member").forEach((b) => b.addEventListener("click", () => {
     state.editingMemberKey = `${b.dataset.family}:${b.dataset.member}`; renderViewTab(main);
   }));
@@ -617,7 +617,7 @@ function attachFamilyCardHandlers(main) {
       disease: row.querySelector(".em-disease").value.trim() || null,
       updated_at: new Date().toISOString(),
     };
-    const { error } = await supabase.from("members").update(payload).eq("id", b.dataset.member);
+    const { error } = await sb.from("members").update(payload).eq("id", b.dataset.member);
     if (error) { toast("Error: " + error.message); return; }
     state.editingMemberKey = null;
     toast("Member updated.");
@@ -625,12 +625,12 @@ function attachFamilyCardHandlers(main) {
   }));
   document.querySelectorAll(".delete-member").forEach((b) => b.addEventListener("click", async () => {
     if (!confirm("Delete this person's record?")) return;
-    const { error } = await supabase.from("members").delete().eq("id", b.dataset.member);
+    const { error } = await sb.from("members").delete().eq("id", b.dataset.member);
     if (error) { toast("Error: " + error.message); return; }
     toast("Member deleted.");
     await loadData();
   }));
-
+ 
   document.querySelectorAll(".add-member-btn").forEach((b) => b.addEventListener("click", () => {
     state.addingMemberFor = b.dataset.family; renderViewTab(main);
   }));
@@ -651,14 +651,14 @@ function attachFamilyCardHandlers(main) {
       job: document.getElementById("nm-job").value.trim() || null,
       disease: document.getElementById("nm-disease").value.trim() || null,
     };
-    const { error } = await supabase.from("members").insert(payload);
+    const { error } = await sb.from("members").insert(payload);
     if (error) { toast("Error: " + error.message); return; }
     state.addingMemberFor = null;
     toast("Member added.");
     await loadData();
   }));
 }
-
+ 
 // ------------------------------------------------------------
 // EXPORT TAB
 // ------------------------------------------------------------
@@ -668,7 +668,7 @@ function toCsvValue(v) {
   if (/[",\n]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
   return s;
 }
-
+ 
 function buildRows(families) {
   const rows = [];
   families.forEach((f) => {
@@ -681,7 +681,7 @@ function buildRows(families) {
   });
   return rows;
 }
-
+ 
 function downloadCsv(filename, rows) {
   const header = ["House No", "House Name", "Address", "Area", "Household Description",
     "Member Name", "Role", "Gender", "Age", "Phone", "Aadhar", "Job", "Health Condition"];
@@ -699,7 +699,7 @@ function downloadCsv(filename, rows) {
   document.body.appendChild(a); a.click(); a.remove();
   URL.revokeObjectURL(url);
 }
-
+ 
 function renderExportTab(main) {
   const areas = uniqueAreas();
   main.innerHTML = `
@@ -755,7 +755,7 @@ function renderExportTab(main) {
       </div>
     </div>
   `;
-
+ 
   document.getElementById("exp-name-asc").addEventListener("click", () => {
     const sorted = [...state.families].sort((a, b) => (a.house_name || "").localeCompare(b.house_name || ""));
     downloadCsv("families_name_asc.csv", buildRows(sorted));
@@ -804,5 +804,5 @@ function renderExportTab(main) {
     downloadCsv("all_records.csv", buildRows(state.families));
   });
 }
-
+ 
 init();
