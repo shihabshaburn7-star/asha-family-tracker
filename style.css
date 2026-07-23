@@ -304,6 +304,7 @@ textarea { min-height: 60px; resize: vertical; }
 .badge { display:inline-block; padding:2px 8px; border-radius:999px; font-size:0.7rem; font-weight:700; text-transform:uppercase; letter-spacing:.03em; }
 .badge-head { background: var(--teal-tint); color: var(--teal); }
 .badge-member { background: var(--surface-2); color: var(--ink-soft); }
+.badge-pregnant { background: var(--rose-tint); color: var(--rose-dark); }
 .toast {
   position: fixed;
   bottom: 20px;
