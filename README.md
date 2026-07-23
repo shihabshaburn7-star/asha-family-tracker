@@ -58,6 +58,13 @@ want a link you can open from your phone or share with a colleague.
 
 ## Keeping the data private
 
+- **Local cache, cleared on sign-out.** To make the app feel instant, it
+  keeps a copy of your records in the browser's local storage on the
+  device you're using, and refreshes it quietly in the background. This
+  cache is automatically cleared the moment you sign out. If you ever use
+  this app on a shared or public computer, always remember to sign out
+  when you're done so that cached copy is removed from that device.
+
 This app is protected by a login (Supabase Authentication), and the
 database rules (Row Level Security) only allow **signed-in** users to see
 or change any data — so simply knowing the website address isn't enough
