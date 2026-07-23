@@ -377,6 +377,11 @@ function memberFormRow(idx, data = {}) {
         <div><label>Aadhar number</label><input type="text" name="m_aadhar_${idx}" value="${escapeHtml(data.aadhar)}" maxlength="14" /></div>
         <div><label>Job / occupation</label><input type="text" name="m_job_${idx}" value="${escapeHtml(data.job)}" /></div>
         <div><label>Disease / health condition</label><input type="text" name="m_disease_${idx}" value="${escapeHtml(data.disease)}" placeholder="None" /></div>
+        <div><label>Polio vaccine</label>
+          <label style="display:flex;align-items:center;gap:6px;text-transform:none;font-weight:400;margin-top:8px;">
+            <input type="checkbox" name="m_polio_${idx}" style="width:auto;" ${data.polio_given ? "checked" : ""} /> Given
+          </label>
+        </div>
       </div>
       ${pregnancyFieldsHtml(idx, data, "add")}
     </div>`;
@@ -414,6 +419,7 @@ function collectDraftFromForm() {
       disease: fd.get(`m_disease_${idx}`) || "",
       is_pregnant: fd.get(`m_pregnant_${idx}`) === "on",
       pregnancy_start_date: fd.get(`m_preg_start_${idx}`) || "",
+      polio_given: fd.get(`m_polio_${idx}`) === "on",
     });
   });
   return { family, members };
@@ -559,6 +565,7 @@ function renderAddTab(main) {
         disease: fd.get(`m_disease_${idx}`)?.trim() || null,
         is_pregnant: isPregnant,
         pregnancy_start_date: isPregnant ? (fd.get(`m_preg_start_${idx}`) || null) : null,
+        polio_given: fd.get(`m_polio_${idx}`) === "on",
       });
     });
 
@@ -608,6 +615,7 @@ function getFilteredSortedFamilies() {
         ...members.flatMap((m) => [
           m.name, m.role, m.phone, m.aadhar, m.job, m.disease,
           m.is_pregnant ? `pregnant month ${calcPregnancyMonth(m.pregnancy_start_date) || ""}` : "",
+          m.polio_given ? "polio given vaccinated" : "polio not given pending",
         ]),
       ].filter(Boolean).join(" ").toLowerCase();
       if (!haystack.includes(q)) return false;
@@ -752,7 +760,7 @@ function renderFamilyCard(f) {
       <div class="family-body">
         ${members.length ? `
         <table class="member-table">
-          <thead><tr><th>Name</th><th>Role</th><th>Gender</th><th>Age</th><th>Phone</th><th>Aadhar</th><th>Job</th><th>Health condition</th><th>Pregnancy</th><th></th></tr></thead>
+          <thead><tr><th>Name</th><th>Role</th><th>Gender</th><th>Age</th><th>Phone</th><th>Aadhar</th><th>Job</th><th>Health condition</th><th>Pregnancy</th><th>Polio</th><th></th></tr></thead>
           <tbody>
             ${members.map((m) => renderMemberRow(f.id, m)).join("")}
           </tbody>
@@ -767,7 +775,7 @@ function renderMemberRow(familyId, m) {
   if (state.editingMemberKey === key) {
     return `
       <tr>
-        <td colspan="10">
+        <td colspan="11">
           <div class="field-grid" style="margin:6px 0;">
             <div><label>Name</label><input type="text" class="em-name" value="${escapeHtml(m.name)}" /></div>
             <div><label>Role</label><select class="em-role">${ROLE_OPTIONS.map((r) => `<option ${m.role === r ? "selected" : ""}>${r}</option>`).join("")}</select></div>
@@ -780,6 +788,7 @@ function renderMemberRow(familyId, m) {
             <div><label style="display:flex;align-items:center;gap:6px;text-transform:none;font-weight:400;"><input type="checkbox" class="em-pregnant" ${m.is_pregnant ? "checked" : ""} style="width:auto;" /> Currently pregnant</label></div>
             <div><label>Pregnancy start date (LMP)</label><input type="date" class="em-preg-start" value="${escapeHtml(m.pregnancy_start_date)}" /></div>
             <div><label>Month (auto)</label><input type="text" class="em-preg-month-display" value="${calcPregnancyMonth(m.pregnancy_start_date) ?? "—"}" disabled style="background:var(--surface-2);color:var(--ink-soft);" /></div>
+            <div><label style="display:flex;align-items:center;gap:6px;text-transform:none;font-weight:400;"><input type="checkbox" class="em-polio" ${m.polio_given ? "checked" : ""} style="width:auto;" /> Polio vaccine given</label></div>
           </div>
           <button class="btn btn-primary btn-sm save-member" data-family="${familyId}" data-member="${m.id}">Save</button>
           <button class="btn btn-ghost btn-sm cancel-edit-member">Cancel</button>
@@ -800,6 +809,7 @@ function renderMemberRow(familyId, m) {
       <td>${escapeHtml(m.job) || "—"}</td>
       <td>${hasDisease ? `<span class="disease-flag">${escapeHtml(m.disease)}</span>` : "—"}</td>
       <td>${m.is_pregnant ? `<span class="badge badge-pregnant">Pregnant · Month ${pregMonth ?? "—"}</span>` : "—"}</td>
+      <td style="text-align:center;">${m.polio_given ? `<span class="polio-tick" title="Polio vaccine given">✓</span>` : `<span class="polio-cross" title="Polio vaccine not given">✗</span>`}</td>
       <td class="member-actions">
         <button class="btn btn-ghost btn-sm edit-member" data-family="${familyId}" data-member="${m.id}">Edit</button>
         <button class="btn btn-danger btn-sm delete-member" data-family="${familyId}" data-member="${m.id}">Delete</button>
@@ -825,6 +835,7 @@ function renderAddMemberInline(familyId) {
         <div><label style="display:flex;align-items:center;gap:6px;text-transform:none;font-weight:400;"><input type="checkbox" id="nm-pregnant" style="width:auto;" /> Currently pregnant</label></div>
         <div><label>Pregnancy start date (LMP)</label><input type="date" id="nm-preg-start" /></div>
         <div><label>Month (auto)</label><input type="text" id="nm-preg-month-display" disabled style="background:var(--surface-2);color:var(--ink-soft);" /></div>
+        <div><label style="display:flex;align-items:center;gap:6px;text-transform:none;font-weight:400;"><input type="checkbox" id="nm-polio" style="width:auto;" /> Polio vaccine given</label></div>
       </div>
       <div style="margin-top:10px;display:flex;gap:8px;">
         <button class="btn btn-primary btn-sm save-new-member" data-family="${familyId}">Save member</button>
@@ -884,6 +895,7 @@ function attachFamilyCardHandlers(main) {
       disease: row.querySelector(".em-disease").value.trim() || null,
       is_pregnant: isPregnant,
       pregnancy_start_date: isPregnant ? (row.querySelector(".em-preg-start").value || null) : null,
+      polio_given: row.querySelector(".em-polio").checked,
       updated_at: new Date().toISOString(),
     };
     const { error } = await sb.from("members").update(payload).eq("id", b.dataset.member);
@@ -922,6 +934,7 @@ function attachFamilyCardHandlers(main) {
       disease: document.getElementById("nm-disease").value.trim() || null,
       is_pregnant: isPregnant,
       pregnancy_start_date: isPregnant ? (document.getElementById("nm-preg-start").value || null) : null,
+      polio_given: document.getElementById("nm-polio").checked,
     };
     const { error } = await sb.from("members").insert(payload);
     if (error) { toast("Error: " + error.message); return; }
@@ -971,7 +984,7 @@ function downloadPdf(filename, title, rows) {
   const head = [[
     "House No", "House Name", "Area", "Address", "Member Name", "Role", "Gender",
     "Date of Birth", "Age", "Phone", "Aadhar", "Job", "Health Condition",
-    "Pregnant", "Preg. Start Date", "Preg. Month",
+    "Pregnant", "Preg. Start Date", "Preg. Month", "Polio",
   ]];
   const body = rows.map(({ f, m }) => {
     const ageDisplay = formatAgeDisplay(m.date_of_birth);
@@ -981,6 +994,7 @@ function downloadPdf(filename, title, rows) {
       m.name || "", m.role || "", m.gender || "",
       m.date_of_birth || "", ageDisplay ?? "", m.phone || "", m.aadhar || "", m.job || "",
       m.disease || "", m.is_pregnant ? "Yes" : "", m.pregnancy_start_date || "", pregMonth ?? "",
+      m.name ? (m.polio_given ? "✓" : "✗") : "",
     ];
   });
 
