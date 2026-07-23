@@ -2,11 +2,11 @@
 // ASHA Family Tracker — app logic
 // Uses Supabase (auth + Postgres) as the backend.
 // ============================================================
- 
+
 const root = document.getElementById("root");
 let sb = null;
 let session = null;
- 
+
 const state = {
   tab: "add",
   families: [],        // [{id, house_no, house_name, address, area, description}]
@@ -20,11 +20,42 @@ const state = {
   ageMin: "",
   ageMax: "",
   diseaseOnly: false,
+  pregnantOnly: false,
   editingMemberKey: null, // `${familyId}:${memberId}`
   addingMemberFor: null,  // familyId currently adding a member to
 };
- 
-const ROLE_OPTIONS = ["Ration Card Head", "Family Member"];
+
+const ROLE_OPTIONS = [
+  "House Owner / Head of Family",
+  "Self",
+  "Wife",
+  "Husband",
+  "Son",
+  "Daughter",
+  "Father",
+  "Mother",
+  "Brother",
+  "Sister",
+  "Grandfather",
+  "Grandmother",
+  "Grandson",
+  "Granddaughter",
+  "Father-in-law",
+  "Mother-in-law",
+  "Son-in-law",
+  "Daughter-in-law",
+  "Brother-in-law",
+  "Sister-in-law",
+  "Wife's Father",
+  "Wife's Mother",
+  "Wife's Brother",
+  "Wife's Sister",
+  "Husband's Father",
+  "Husband's Mother",
+  "Husband's Brother",
+  "Husband's Sister",
+  "Other Relative",
+];
 const GENDER_OPTIONS = ["Male", "Female", "Other"];
 const AGE_PRESETS = [
   { label: "Infant (0–1)", min: 0, max: 1 },
@@ -33,7 +64,32 @@ const AGE_PRESETS = [
   { label: "Middle age (41–60)", min: 41, max: 60 },
   { label: "Senior (60+)", min: 60, max: 150 },
 ];
- 
+
+// Age is always derived from date of birth, so it's automatically correct
+// on every visit — nothing to update by hand.
+function calcAge(dobStr) {
+  if (!dobStr) return null;
+  const dob = new Date(dobStr);
+  if (isNaN(dob.getTime())) return null;
+  const today = new Date();
+  let age = today.getFullYear() - dob.getFullYear();
+  const m = today.getMonth() - dob.getMonth();
+  if (m < 0 || (m === 0 && today.getDate() < dob.getDate())) age--;
+  return age >= 0 ? age : null;
+}
+
+// Pregnancy month is derived from the recorded start date (LMP), so it
+// automatically advances each month without anyone updating it by hand.
+function calcPregnancyMonth(startStr) {
+  if (!startStr) return null;
+  const start = new Date(startStr);
+  if (isNaN(start.getTime())) return null;
+  const days = Math.floor((new Date() - start) / (1000 * 60 * 60 * 24));
+  if (days < 0) return null;
+  const month = Math.floor(days / 30.4) + 1;
+  return month > 9 ? "9+ (overdue/check)" : month;
+}
+
 function toast(msg) {
   const t = document.createElement("div");
   t.className = "toast";
@@ -41,7 +97,7 @@ function toast(msg) {
   document.body.appendChild(t);
   setTimeout(() => t.remove(), 2600);
 }
- 
+
 function escapeHtml(str) {
   if (str === null || str === undefined) return "";
   return String(str)
@@ -50,7 +106,7 @@ function escapeHtml(str) {
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;");
 }
- 
+
 // ------------------------------------------------------------
 // BOOTSTRAP
 // ------------------------------------------------------------
@@ -60,7 +116,7 @@ function init() {
     return;
   }
   sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
- 
+
   sb.auth.getSession().then(({ data }) => {
     session = data.session;
     if (session) {
@@ -69,7 +125,7 @@ function init() {
       renderLogin();
     }
   });
- 
+
   sb.auth.onAuthStateChange((_event, newSession) => {
     session = newSession;
     if (session) {
@@ -79,7 +135,7 @@ function init() {
     }
   });
 }
- 
+
 function renderSetupNeeded() {
   root.innerHTML = `
     <div class="center-screen">
@@ -92,7 +148,7 @@ function renderSetupNeeded() {
       </div>
     </div>`;
 }
- 
+
 // ------------------------------------------------------------
 // AUTH SCREENS
 // ------------------------------------------------------------
@@ -123,7 +179,7 @@ function renderLogin(mode = "login", errorMsg = "") {
         </div>
       </div>
     </div>`;
- 
+
   document.getElementById("auth-form").addEventListener("submit", async (e) => {
     e.preventDefault();
     const email = document.getElementById("auth-email").value.trim();
@@ -137,13 +193,13 @@ function renderLogin(mode = "login", errorMsg = "") {
       else renderLogin("login", "Account created. If email confirmation is on, check your inbox, then sign in.");
     }
   });
- 
+
   const toSignup = document.getElementById("to-signup");
   const toLogin = document.getElementById("to-login");
   if (toSignup) toSignup.addEventListener("click", () => renderLogin("signup"));
   if (toLogin) toLogin.addEventListener("click", () => renderLogin("login"));
 }
- 
+
 // ------------------------------------------------------------
 // DATA LOADING
 // ------------------------------------------------------------
@@ -156,22 +212,22 @@ async function loadData() {
   const { data: members, error: memErr } = await sb
     .from("members")
     .select("*");
- 
+
   if (famErr || memErr) {
     root.innerHTML = `<div class="center-screen"><div class="auth-card"><h1>Couldn't load data</h1><p class="sub">${escapeHtml((famErr || memErr).message)}</p></div></div>`;
     return;
   }
- 
+
   state.families = families || [];
   state.membersByFamily = {};
   (members || []).forEach((m) => {
     if (!state.membersByFamily[m.family_id]) state.membersByFamily[m.family_id] = [];
     state.membersByFamily[m.family_id].push(m);
   });
- 
+
   renderShell();
 }
- 
+
 // ------------------------------------------------------------
 // SHELL / NAV
 // ------------------------------------------------------------
@@ -190,7 +246,7 @@ function renderShell() {
       </div>
       <div class="main" id="main"></div>
     </div>`;
- 
+
   document.querySelectorAll(".nav-btn").forEach((b) =>
     b.addEventListener("click", () => {
       state.tab = b.dataset.tab;
@@ -203,16 +259,33 @@ function renderShell() {
   document.querySelectorAll(".nav-btn").forEach((b) => {
     if (b.dataset.tab === state.tab) b.classList.add("active");
   });
- 
+
   const main = document.getElementById("main");
   if (state.tab === "add") renderAddTab(main);
   else if (state.tab === "view") renderViewTab(main);
   else if (state.tab === "export") renderExportTab(main);
 }
- 
+
 // ------------------------------------------------------------
 // ADD FAMILY TAB
 // ------------------------------------------------------------
+function pregnancyFieldsHtml(idx, data, prefix) {
+  const show = data.gender === "Female";
+  const currentMonth = calcPregnancyMonth(data.pregnancy_start_date);
+  return `
+    <div class="pregnancy-fields ${show ? "" : "hidden"}" data-preg-for="${prefix}${idx}">
+      <div><label style="display:flex;align-items:center;gap:6px;text-transform:none;font-weight:400;">
+        <input type="checkbox" name="m_pregnant_${idx}" class="preg-checkbox" data-idx="${idx}" data-prefix="${prefix}" style="width:auto;" ${data.is_pregnant ? "checked" : ""} /> Currently pregnant
+      </label></div>
+      <div><label>Pregnancy start date (LMP)</label>
+        <input type="date" name="m_preg_start_${idx}" class="preg-start-input" data-idx="${idx}" data-prefix="${prefix}" value="${escapeHtml(data.pregnancy_start_date)}" />
+      </div>
+      <div><label>Month (auto)</label>
+        <input type="text" class="preg-month-display" data-idx="${idx}" data-prefix="${prefix}" value="${currentMonth ?? "—"}" disabled style="background:var(--surface-2);color:var(--ink-soft);" />
+      </div>
+    </div>`;
+}
+
 function memberFormRow(idx, data = {}) {
   return `
     <div class="member-row" data-idx="${idx}">
@@ -225,20 +298,21 @@ function memberFormRow(idx, data = {}) {
           </select>
         </div>
         <div><label>Gender</label>
-          <select name="m_gender_${idx}">
+          <select name="m_gender_${idx}" class="gender-select" data-idx="${idx}" data-prefix="add">
             <option value="">—</option>
             ${GENDER_OPTIONS.map((g) => `<option ${data.gender === g ? "selected" : ""}>${g}</option>`).join("")}
           </select>
         </div>
-        <div><label>Age</label><input type="number" min="0" max="120" name="m_age_${idx}" value="${escapeHtml(data.age)}" /></div>
+        <div><label>Date of birth</label><input type="date" name="m_dob_${idx}" value="${escapeHtml(data.date_of_birth)}" /></div>
         <div><label>Phone number</label><input type="tel" name="m_phone_${idx}" value="${escapeHtml(data.phone)}" /></div>
         <div><label>Aadhar number</label><input type="text" name="m_aadhar_${idx}" value="${escapeHtml(data.aadhar)}" maxlength="14" /></div>
         <div><label>Job / occupation</label><input type="text" name="m_job_${idx}" value="${escapeHtml(data.job)}" /></div>
         <div><label>Disease / health condition</label><input type="text" name="m_disease_${idx}" value="${escapeHtml(data.disease)}" placeholder="None" /></div>
       </div>
+      ${pregnancyFieldsHtml(idx, data, "add")}
     </div>`;
 }
- 
+
 function renderAddTab(main) {
   if (!state.addMemberDraftCount) state.addMemberDraftCount = 1;
   main.innerHTML = `
@@ -265,7 +339,7 @@ function renderAddTab(main) {
       <button type="submit" class="btn btn-primary">Save family</button>
     </form>
   `;
- 
+
   document.getElementById("add-member-row").addEventListener("click", () => {
     state.addMemberDraftCount += 1;
     document.getElementById("members-container").insertAdjacentHTML(
@@ -273,9 +347,11 @@ function renderAddTab(main) {
       memberFormRow(state.addMemberDraftCount - 1)
     );
     attachRemoveHandlers();
+    attachGenderToggle();
   });
   attachRemoveHandlers();
- 
+  attachGenderToggle();
+
   function attachRemoveHandlers() {
     document.querySelectorAll(".remove-member").forEach((btn) => {
       btn.onclick = () => {
@@ -284,7 +360,22 @@ function renderAddTab(main) {
       };
     });
   }
- 
+
+  function attachGenderToggle() {
+    document.querySelectorAll(".gender-select").forEach((sel) => {
+      sel.onchange = () => {
+        const target = document.querySelector(`[data-preg-for="${sel.dataset.prefix}${sel.dataset.idx}"]`);
+        if (target) target.classList.toggle("hidden", sel.value !== "Female");
+      };
+    });
+    document.querySelectorAll(".preg-start-input").forEach((inp) => {
+      inp.oninput = () => {
+        const display = document.querySelector(`.preg-month-display[data-prefix="${inp.dataset.prefix}"][data-idx="${inp.dataset.idx}"]`);
+        if (display) display.value = calcPregnancyMonth(inp.value) ?? "—";
+      };
+    });
+  }
+
   document.getElementById("family-form").addEventListener("submit", async (e) => {
     e.preventDefault();
     const fd = new FormData(e.target);
@@ -295,37 +386,41 @@ function renderAddTab(main) {
       address: fd.get("address")?.trim() || null,
       description: fd.get("description")?.trim() || null,
     };
- 
+
     const { data: famRows, error: famErr } = await sb
       .from("families")
       .insert(familyPayload)
       .select();
     if (famErr) { toast("Error saving household: " + famErr.message); return; }
     const familyId = famRows[0].id;
- 
+
     const memberRows = [];
     document.querySelectorAll(".member-row").forEach((row) => {
       const idx = row.dataset.idx;
       const name = fd.get(`m_name_${idx}`)?.trim();
       if (!name) return;
+      const gender = fd.get(`m_gender_${idx}`) || null;
+      const isPregnant = gender === "Female" && fd.get(`m_pregnant_${idx}`) === "on";
       memberRows.push({
         family_id: familyId,
         name,
         role: fd.get(`m_role_${idx}`) || null,
-        gender: fd.get(`m_gender_${idx}`) || null,
-        age: fd.get(`m_age_${idx}`) ? parseInt(fd.get(`m_age_${idx}`), 10) : null,
+        gender,
+        date_of_birth: fd.get(`m_dob_${idx}`) || null,
         phone: fd.get(`m_phone_${idx}`)?.trim() || null,
         aadhar: fd.get(`m_aadhar_${idx}`)?.trim() || null,
         job: fd.get(`m_job_${idx}`)?.trim() || null,
         disease: fd.get(`m_disease_${idx}`)?.trim() || null,
+        is_pregnant: isPregnant,
+        pregnancy_start_date: isPregnant ? (fd.get(`m_preg_start_${idx}`) || null) : null,
       });
     });
- 
+
     if (memberRows.length) {
       const { error: memErr } = await sb.from("members").insert(memberRows);
       if (memErr) { toast("Household saved, but members failed: " + memErr.message); }
     }
- 
+
     toast("Family saved.");
     state.addMemberDraftCount = 1;
     await loadData();
@@ -333,7 +428,7 @@ function renderAddTab(main) {
     renderShell();
   });
 }
- 
+
 // ------------------------------------------------------------
 // VIEW & MANAGE TAB
 // ------------------------------------------------------------
@@ -342,29 +437,37 @@ function getFilteredSortedFamilies() {
   let list = state.families.filter((f) => {
     const members = state.membersByFamily[f.id] || [];
     if (state.filterArea && f.area !== state.filterArea) return false;
- 
+
     if (state.ageMin !== "" || state.ageMax !== "") {
       const min = state.ageMin !== "" ? parseInt(state.ageMin, 10) : 0;
       const max = state.ageMax !== "" ? parseInt(state.ageMax, 10) : 999;
-      const hasAgeMatch = members.some((m) => m.age !== null && m.age >= min && m.age <= max);
+      const hasAgeMatch = members.some((m) => { const a = calcAge(m.date_of_birth); return a !== null && a >= min && a <= max; });
       if (!hasAgeMatch) return false;
     }
- 
+
     if (state.diseaseOnly) {
       const hasDisease = members.some((m) => m.disease && m.disease.trim() && m.disease.trim().toLowerCase() !== "none");
       if (!hasDisease) return false;
     }
- 
+
+    if (state.pregnantOnly) {
+      const hasPregnant = members.some((m) => m.is_pregnant);
+      if (!hasPregnant) return false;
+    }
+
     if (q) {
       const haystack = [
         f.house_no, f.house_name, f.address, f.area, f.description,
-        ...members.flatMap((m) => [m.name, m.phone, m.aadhar, m.job, m.disease]),
+        ...members.flatMap((m) => [
+          m.name, m.role, m.phone, m.aadhar, m.job, m.disease,
+          m.is_pregnant ? `pregnant month ${calcPregnancyMonth(m.pregnancy_start_date) || ""}` : "",
+        ]),
       ].filter(Boolean).join(" ").toLowerCase();
       if (!haystack.includes(q)) return false;
     }
     return true;
   });
- 
+
   const cmp = {
     house_name_asc: (a, b) => (a.house_name || "").localeCompare(b.house_name || ""),
     house_name_desc: (a, b) => (b.house_name || "").localeCompare(a.house_name || ""),
@@ -374,29 +477,29 @@ function getFilteredSortedFamilies() {
   }[state.sortBy];
   return list.sort(cmp);
 }
- 
+
 function uniqueAreas() {
   return [...new Set(state.families.map((f) => f.area).filter(Boolean))].sort();
 }
- 
+
 function renderViewTab(main) {
   const list = getFilteredSortedFamilies();
   const totalMembers = Object.values(state.membersByFamily).reduce((s, arr) => s + arr.length, 0);
   const diseasedCount = Object.values(state.membersByFamily).flat().filter(
     (m) => m.disease && m.disease.trim() && m.disease.trim().toLowerCase() !== "none"
   ).length;
- 
+
   main.innerHTML = `
     <h2 class="page-title">View &amp; manage families</h2>
     <p class="page-sub">Search, sort, filter, or edit any household and its members.</p>
- 
+
     <div class="stat-row">
       <div class="stat"><span class="num">${state.families.length}</span><span class="lbl">Households</span></div>
       <div class="stat"><span class="num">${totalMembers}</span><span class="lbl">People</span></div>
       <div class="stat"><span class="num">${diseasedCount}</span><span class="lbl">With a health condition</span></div>
       <div class="stat"><span class="num">${uniqueAreas().length}</span><span class="lbl">Areas</span></div>
     </div>
- 
+
     <div class="panel">
       <div class="toolbar">
         <div class="field grow">
@@ -428,24 +531,31 @@ function renderViewTab(main) {
             <input type="checkbox" id="f-disease" ${state.diseaseOnly ? "checked" : ""} style="width:auto;" /> Health condition only
           </label>
         </div>
+        <div class="field">
+          <label>&nbsp;</label>
+          <label style="display:flex;align-items:center;gap:6px;text-transform:none;font-weight:400;">
+            <input type="checkbox" id="f-pregnant" ${state.pregnantOnly ? "checked" : ""} style="width:auto;" /> Pregnant women only
+          </label>
+        </div>
         <div class="field"><button id="f-clear" class="btn btn-ghost btn-sm">Clear filters</button></div>
       </div>
     </div>
- 
+
     <div id="family-list"></div>
   `;
- 
+
   document.getElementById("f-search").addEventListener("input", (e) => { state.search = e.target.value; renderViewTab(main); });
   document.getElementById("f-sort").addEventListener("change", (e) => { state.sortBy = e.target.value; renderViewTab(main); });
   document.getElementById("f-area").addEventListener("change", (e) => { state.filterArea = e.target.value; renderViewTab(main); });
   document.getElementById("f-age-min").addEventListener("input", (e) => { state.ageMin = e.target.value; renderViewTab(main); });
   document.getElementById("f-age-max").addEventListener("input", (e) => { state.ageMax = e.target.value; renderViewTab(main); });
   document.getElementById("f-disease").addEventListener("change", (e) => { state.diseaseOnly = e.target.checked; renderViewTab(main); });
+  document.getElementById("f-pregnant").addEventListener("change", (e) => { state.pregnantOnly = e.target.checked; renderViewTab(main); });
   document.getElementById("f-clear").addEventListener("click", () => {
-    state.search = ""; state.filterArea = ""; state.ageMin = ""; state.ageMax = ""; state.diseaseOnly = false;
+    state.search = ""; state.filterArea = ""; state.ageMin = ""; state.ageMax = ""; state.diseaseOnly = false; state.pregnantOnly = false;
     renderViewTab(main);
   });
- 
+
   const listEl = document.getElementById("family-list");
   if (!list.length) {
     listEl.innerHTML = `<div class="panel"><p style="margin:0;color:var(--ink-soft);">No households match. Try clearing filters, or add your first family.</p></div>`;
@@ -454,11 +564,11 @@ function renderViewTab(main) {
   listEl.innerHTML = list.map((f) => renderFamilyCard(f)).join("");
   attachFamilyCardHandlers(main);
 }
- 
+
 function renderFamilyCard(f) {
   const members = state.membersByFamily[f.id] || [];
   const isEditing = state.editingFamilyId === f.id;
- 
+
   if (isEditing) {
     return `
       <div class="family-card">
@@ -477,7 +587,7 @@ function renderFamilyCard(f) {
         </div>
       </div>`;
   }
- 
+
   return `
     <div class="family-card">
       <div class="family-head">
@@ -495,7 +605,7 @@ function renderFamilyCard(f) {
       <div class="family-body">
         ${members.length ? `
         <table class="member-table">
-          <thead><tr><th>Name</th><th>Role</th><th>Gender</th><th>Age</th><th>Phone</th><th>Aadhar</th><th>Job</th><th>Health condition</th><th></th></tr></thead>
+          <thead><tr><th>Name</th><th>Role</th><th>Gender</th><th>Age</th><th>Phone</th><th>Aadhar</th><th>Job</th><th>Health condition</th><th>Pregnancy</th><th></th></tr></thead>
           <tbody>
             ${members.map((m) => renderMemberRow(f.id, m)).join("")}
           </tbody>
@@ -504,22 +614,25 @@ function renderFamilyCard(f) {
       </div>
     </div>`;
 }
- 
+
 function renderMemberRow(familyId, m) {
   const key = `${familyId}:${m.id}`;
   if (state.editingMemberKey === key) {
     return `
       <tr>
-        <td colspan="9">
+        <td colspan="10">
           <div class="field-grid" style="margin:6px 0;">
             <div><label>Name</label><input type="text" class="em-name" value="${escapeHtml(m.name)}" /></div>
             <div><label>Role</label><select class="em-role">${ROLE_OPTIONS.map((r) => `<option ${m.role === r ? "selected" : ""}>${r}</option>`).join("")}</select></div>
             <div><label>Gender</label><select class="em-gender"><option value="">—</option>${GENDER_OPTIONS.map((g) => `<option ${m.gender === g ? "selected" : ""}>${g}</option>`).join("")}</select></div>
-            <div><label>Age</label><input type="number" class="em-age" value="${escapeHtml(m.age)}" /></div>
+            <div><label>Date of birth</label><input type="date" class="em-dob" value="${escapeHtml(m.date_of_birth)}" /></div>
             <div><label>Phone</label><input type="tel" class="em-phone" value="${escapeHtml(m.phone)}" /></div>
             <div><label>Aadhar</label><input type="text" class="em-aadhar" value="${escapeHtml(m.aadhar)}" /></div>
             <div><label>Job</label><input type="text" class="em-job" value="${escapeHtml(m.job)}" /></div>
             <div><label>Health condition</label><input type="text" class="em-disease" value="${escapeHtml(m.disease)}" /></div>
+            <div><label style="display:flex;align-items:center;gap:6px;text-transform:none;font-weight:400;"><input type="checkbox" class="em-pregnant" ${m.is_pregnant ? "checked" : ""} style="width:auto;" /> Currently pregnant</label></div>
+            <div><label>Pregnancy start date (LMP)</label><input type="date" class="em-preg-start" value="${escapeHtml(m.pregnancy_start_date)}" /></div>
+            <div><label>Month (auto)</label><input type="text" class="em-preg-month-display" value="${calcPregnancyMonth(m.pregnancy_start_date) ?? "—"}" disabled style="background:var(--surface-2);color:var(--ink-soft);" /></div>
           </div>
           <button class="btn btn-primary btn-sm save-member" data-family="${familyId}" data-member="${m.id}">Save</button>
           <button class="btn btn-ghost btn-sm cancel-edit-member">Cancel</button>
@@ -527,23 +640,26 @@ function renderMemberRow(familyId, m) {
       </tr>`;
   }
   const hasDisease = m.disease && m.disease.trim() && m.disease.trim().toLowerCase() !== "none";
+  const age = calcAge(m.date_of_birth);
+  const pregMonth = m.is_pregnant ? calcPregnancyMonth(m.pregnancy_start_date) : null;
   return `
     <tr>
       <td>${escapeHtml(m.name)}</td>
-      <td><span class="badge ${m.role === "Ration Card Head" ? "badge-head" : "badge-member"}">${escapeHtml(m.role) || "—"}</span></td>
+      <td><span class="badge ${m.role === "House Owner / Head of Family" ? "badge-head" : "badge-member"}">${escapeHtml(m.role) || "—"}</span></td>
       <td>${escapeHtml(m.gender) || "—"}</td>
-      <td>${m.age ?? "—"}</td>
+      <td>${age ?? "—"}</td>
       <td>${escapeHtml(m.phone) || "—"}</td>
       <td>${escapeHtml(m.aadhar) || "—"}</td>
       <td>${escapeHtml(m.job) || "—"}</td>
       <td>${hasDisease ? `<span class="disease-flag">${escapeHtml(m.disease)}</span>` : "—"}</td>
+      <td>${m.is_pregnant ? `<span class="badge badge-pregnant">Pregnant · Month ${pregMonth ?? "—"}</span>` : "—"}</td>
       <td class="member-actions">
         <button class="btn btn-ghost btn-sm edit-member" data-family="${familyId}" data-member="${m.id}">Edit</button>
         <button class="btn btn-danger btn-sm delete-member" data-family="${familyId}" data-member="${m.id}">Delete</button>
       </td>
     </tr>`;
 }
- 
+
 function renderAddMemberInline(familyId) {
   if (state.addingMemberFor !== familyId) {
     return `<button class="btn btn-ghost btn-sm add-member-btn" data-family="${familyId}" style="margin-top:10px;">＋ Add member to this family</button>`;
@@ -554,11 +670,14 @@ function renderAddMemberInline(familyId) {
         <div><label>Full name *</label><input type="text" id="nm-name" /></div>
         <div><label>Role</label><select id="nm-role">${ROLE_OPTIONS.map((r) => `<option>${r}</option>`).join("")}</select></div>
         <div><label>Gender</label><select id="nm-gender"><option value="">—</option>${GENDER_OPTIONS.map((g) => `<option>${g}</option>`).join("")}</select></div>
-        <div><label>Age</label><input type="number" id="nm-age" /></div>
+        <div><label>Date of birth</label><input type="date" id="nm-dob" /></div>
         <div><label>Phone</label><input type="tel" id="nm-phone" /></div>
         <div><label>Aadhar</label><input type="text" id="nm-aadhar" /></div>
         <div><label>Job</label><input type="text" id="nm-job" /></div>
         <div><label>Health condition</label><input type="text" id="nm-disease" /></div>
+        <div><label style="display:flex;align-items:center;gap:6px;text-transform:none;font-weight:400;"><input type="checkbox" id="nm-pregnant" style="width:auto;" /> Currently pregnant</label></div>
+        <div><label>Pregnancy start date (LMP)</label><input type="date" id="nm-preg-start" /></div>
+        <div><label>Month (auto)</label><input type="text" id="nm-preg-month-display" disabled style="background:var(--surface-2);color:var(--ink-soft);" /></div>
       </div>
       <div style="margin-top:10px;display:flex;gap:8px;">
         <button class="btn btn-primary btn-sm save-new-member" data-family="${familyId}">Save member</button>
@@ -566,7 +685,7 @@ function renderAddMemberInline(familyId) {
       </div>
     </div>`;
 }
- 
+
 function attachFamilyCardHandlers(main) {
   document.querySelectorAll(".edit-family").forEach((b) => b.addEventListener("click", () => {
     state.editingFamilyId = b.dataset.id; renderViewTab(main);
@@ -597,7 +716,7 @@ function attachFamilyCardHandlers(main) {
     toast("Household deleted.");
     await loadData();
   }));
- 
+
   document.querySelectorAll(".edit-member").forEach((b) => b.addEventListener("click", () => {
     state.editingMemberKey = `${b.dataset.family}:${b.dataset.member}`; renderViewTab(main);
   }));
@@ -606,15 +725,18 @@ function attachFamilyCardHandlers(main) {
   }));
   document.querySelectorAll(".save-member").forEach((b) => b.addEventListener("click", async () => {
     const row = b.closest("tr");
+    const isPregnant = row.querySelector(".em-pregnant").checked;
     const payload = {
       name: row.querySelector(".em-name").value.trim(),
       role: row.querySelector(".em-role").value,
       gender: row.querySelector(".em-gender").value || null,
-      age: row.querySelector(".em-age").value ? parseInt(row.querySelector(".em-age").value, 10) : null,
+      date_of_birth: row.querySelector(".em-dob").value || null,
       phone: row.querySelector(".em-phone").value.trim() || null,
       aadhar: row.querySelector(".em-aadhar").value.trim() || null,
       job: row.querySelector(".em-job").value.trim() || null,
       disease: row.querySelector(".em-disease").value.trim() || null,
+      is_pregnant: isPregnant,
+      pregnancy_start_date: isPregnant ? (row.querySelector(".em-preg-start").value || null) : null,
       updated_at: new Date().toISOString(),
     };
     const { error } = await sb.from("members").update(payload).eq("id", b.dataset.member);
@@ -630,7 +752,7 @@ function attachFamilyCardHandlers(main) {
     toast("Member deleted.");
     await loadData();
   }));
- 
+
   document.querySelectorAll(".add-member-btn").forEach((b) => b.addEventListener("click", () => {
     state.addingMemberFor = b.dataset.family; renderViewTab(main);
   }));
@@ -640,16 +762,19 @@ function attachFamilyCardHandlers(main) {
   document.querySelectorAll(".save-new-member").forEach((b) => b.addEventListener("click", async () => {
     const name = document.getElementById("nm-name").value.trim();
     if (!name) { toast("Name is required."); return; }
+    const isPregnant = document.getElementById("nm-pregnant").checked;
     const payload = {
       family_id: b.dataset.family,
       name,
       role: document.getElementById("nm-role").value,
       gender: document.getElementById("nm-gender").value || null,
-      age: document.getElementById("nm-age").value ? parseInt(document.getElementById("nm-age").value, 10) : null,
+      date_of_birth: document.getElementById("nm-dob").value || null,
       phone: document.getElementById("nm-phone").value.trim() || null,
       aadhar: document.getElementById("nm-aadhar").value.trim() || null,
       job: document.getElementById("nm-job").value.trim() || null,
       disease: document.getElementById("nm-disease").value.trim() || null,
+      is_pregnant: isPregnant,
+      pregnancy_start_date: isPregnant ? (document.getElementById("nm-preg-start").value || null) : null,
     };
     const { error } = await sb.from("members").insert(payload);
     if (error) { toast("Error: " + error.message); return; }
@@ -657,18 +782,21 @@ function attachFamilyCardHandlers(main) {
     toast("Member added.");
     await loadData();
   }));
+
+  // Live-refresh the auto-calculated pregnancy month as a date is picked
+  const embPreg = document.querySelector(".em-preg-start");
+  if (embPreg) embPreg.addEventListener("input", () => {
+    document.querySelector(".em-preg-month-display").value = calcPregnancyMonth(embPreg.value) ?? "—";
+  });
+  const nmPreg = document.getElementById("nm-preg-start");
+  if (nmPreg) nmPreg.addEventListener("input", () => {
+    document.getElementById("nm-preg-month-display").value = calcPregnancyMonth(nmPreg.value) ?? "—";
+  });
 }
- 
+
 // ------------------------------------------------------------
-// EXPORT TAB
+// EXPORT TAB — PDF only
 // ------------------------------------------------------------
-function toCsvValue(v) {
-  if (v === null || v === undefined) return "";
-  const s = String(v);
-  if (/[",\n]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
-  return s;
-}
- 
 function buildRows(families) {
   const rows = [];
   families.forEach((f) => {
@@ -681,45 +809,66 @@ function buildRows(families) {
   });
   return rows;
 }
- 
-function downloadCsv(filename, rows) {
-  const header = ["House No", "House Name", "Address", "Area", "Household Description",
-    "Member Name", "Role", "Gender", "Age", "Phone", "Aadhar", "Job", "Health Condition"];
-  const lines = [header.join(",")];
-  rows.forEach(({ f, m }) => {
-    lines.push([
-      f.house_no, f.house_name, f.address, f.area, f.description,
-      m.name, m.role, m.gender, m.age, m.phone, m.aadhar, m.job, m.disease,
-    ].map(toCsvValue).join(","));
+
+function downloadPdf(filename, title, rows) {
+  if (!window.jspdf) { toast("PDF library failed to load — check your internet connection and reload."); return; }
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ orientation: "landscape", unit: "pt", format: "a4" });
+
+  doc.setFontSize(14);
+  doc.text(title, 30, 28);
+  doc.setFontSize(9);
+  doc.setTextColor(120);
+  doc.text(`Generated ${new Date().toLocaleString()} · ${rows.length} record(s)`, 30, 42);
+
+  const head = [[
+    "House No", "House Name", "Area", "Address", "Member Name", "Role", "Gender",
+    "Date of Birth", "Age", "Phone", "Aadhar", "Job", "Health Condition",
+    "Pregnant", "Preg. Start Date", "Preg. Month",
+  ]];
+  const body = rows.map(({ f, m }) => {
+    const age = calcAge(m.date_of_birth);
+    const pregMonth = m.is_pregnant ? calcPregnancyMonth(m.pregnancy_start_date) : "";
+    return [
+      f.house_no || "", f.house_name || "", f.area || "", f.address || "",
+      m.name || "", m.role || "", m.gender || "",
+      m.date_of_birth || "", age ?? "", m.phone || "", m.aadhar || "", m.job || "",
+      m.disease || "", m.is_pregnant ? "Yes" : "", m.pregnancy_start_date || "", pregMonth ?? "",
+    ];
   });
-  const blob = new Blob([lines.join("\n")], { type: "text/csv;charset=utf-8;" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url; a.download = filename;
-  document.body.appendChild(a); a.click(); a.remove();
-  URL.revokeObjectURL(url);
+
+  doc.autoTable({
+    head, body,
+    startY: 54,
+    styles: { fontSize: 6.5, cellPadding: 3 },
+    headStyles: { fillColor: [163, 21, 86] },
+    theme: "grid",
+    margin: { left: 20, right: 20 },
+  });
+
+  doc.save(filename);
 }
- 
+
 function renderExportTab(main) {
   const areas = uniqueAreas();
   main.innerHTML = `
     <h2 class="page-title">Export data</h2>
-    <p class="page-sub">Download your ward's records as a CSV file (opens in Excel / Google Sheets).</p>
+    <p class="page-sub">Download your ward's records as a PDF file, ready to print or share.</p>
     <div class="export-grid">
       <div class="export-tile">
         <h4>All records — name A→Z</h4>
         <p>Every household and member, sorted by member name.</p>
-        <button class="btn btn-teal btn-sm" id="exp-name-asc">Download</button>
+        <button class="btn btn-teal btn-sm" id="exp-name-asc">Download PDF</button>
       </div>
       <div class="export-tile">
         <h4>All records — name Z→A</h4>
         <p>Every household and member, reverse alphabetical.</p>
-        <button class="btn btn-teal btn-sm" id="exp-name-desc">Download</button>
+        <button class="btn btn-teal btn-sm" id="exp-name-desc">Download PDF</button>
       </div>
       <div class="export-tile">
         <h4>By house no</h4>
         <p>Sorted by house number.</p>
-        <button class="btn btn-teal btn-sm" id="exp-house-no">Download</button>
+        <button class="btn btn-teal btn-sm" id="exp-house-no">Download PDF</button>
       </div>
       <div class="export-tile">
         <h4>Grouped by area</h4>
@@ -728,11 +877,11 @@ function renderExportTab(main) {
           <option value="">All areas (grouped)</option>
           ${areas.map((a) => `<option>${escapeHtml(a)}</option>`).join("")}
         </select>
-        <button class="btn btn-teal btn-sm" id="exp-area">Download</button>
+        <button class="btn btn-teal btn-sm" id="exp-area">Download PDF</button>
       </div>
       <div class="export-tile">
         <h4>By age group</h4>
-        <p>Pick a preset or type a custom range.</p>
+        <p>Pick a preset or type a custom range. Age is calculated live from each person's date of birth.</p>
         <select id="exp-age-preset" style="margin-bottom:8px;">
           <option value="">Custom range below</option>
           ${AGE_PRESETS.map((p, i) => `<option value="${i}">${p.label}</option>`).join("")}
@@ -741,38 +890,43 @@ function renderExportTab(main) {
           <input type="number" id="exp-age-min" placeholder="Min" style="width:80px;" />
           <input type="number" id="exp-age-max" placeholder="Max" style="width:80px;" />
         </div>
-        <button class="btn btn-teal btn-sm" id="exp-age">Download</button>
+        <button class="btn btn-teal btn-sm" id="exp-age">Download PDF</button>
       </div>
       <div class="export-tile">
         <h4>People with a health condition</h4>
         <p>Only members with a disease / condition noted.</p>
-        <button class="btn btn-teal btn-sm" id="exp-disease">Download</button>
+        <button class="btn btn-teal btn-sm" id="exp-disease">Download PDF</button>
+      </div>
+      <div class="export-tile">
+        <h4>Pregnant women</h4>
+        <p>Only members currently marked pregnant, with their auto-calculated month.</p>
+        <button class="btn btn-teal btn-sm" id="exp-pregnant">Download PDF</button>
       </div>
       <div class="export-tile">
         <h4>Everything (raw)</h4>
         <p>Full unfiltered dataset, in current view order.</p>
-        <button class="btn btn-primary btn-sm" id="exp-all">Download</button>
+        <button class="btn btn-primary btn-sm" id="exp-all">Download PDF</button>
       </div>
     </div>
   `;
- 
+
   document.getElementById("exp-name-asc").addEventListener("click", () => {
     const sorted = [...state.families].sort((a, b) => (a.house_name || "").localeCompare(b.house_name || ""));
-    downloadCsv("families_name_asc.csv", buildRows(sorted));
+    downloadPdf("families_name_asc.pdf", "All Records — Name A to Z", buildRows(sorted));
   });
   document.getElementById("exp-name-desc").addEventListener("click", () => {
     const sorted = [...state.families].sort((a, b) => (b.house_name || "").localeCompare(a.house_name || ""));
-    downloadCsv("families_name_desc.csv", buildRows(sorted));
+    downloadPdf("families_name_desc.pdf", "All Records — Name Z to A", buildRows(sorted));
   });
   document.getElementById("exp-house-no").addEventListener("click", () => {
     const sorted = [...state.families].sort((a, b) => (a.house_no || "").localeCompare(b.house_no || "", undefined, { numeric: true }));
-    downloadCsv("families_by_house_no.csv", buildRows(sorted));
+    downloadPdf("families_by_house_no.pdf", "Records by House No", buildRows(sorted));
   });
   document.getElementById("exp-area").addEventListener("click", () => {
     const pick = document.getElementById("exp-area-pick").value;
     let fam = pick ? state.families.filter((f) => f.area === pick) : [...state.families];
     fam.sort((a, b) => (a.area || "").localeCompare(b.area || "") || (a.house_name || "").localeCompare(b.house_name || ""));
-    downloadCsv(pick ? `area_${pick}.csv` : "families_by_area.csv", buildRows(fam));
+    downloadPdf(pick ? `area_${pick}.pdf` : "families_by_area.pdf", pick ? `Records — Area: ${pick}` : "Records Grouped by Area", buildRows(fam));
   });
   document.getElementById("exp-age").addEventListener("click", () => {
     const presetIdx = document.getElementById("exp-age-preset").value;
@@ -786,10 +940,11 @@ function renderExportTab(main) {
     const rows = [];
     state.families.forEach((f) => {
       (state.membersByFamily[f.id] || []).forEach((m) => {
-        if (m.age !== null && m.age >= min && m.age <= max) rows.push({ f, m });
+        const age = calcAge(m.date_of_birth);
+        if (age !== null && age >= min && age <= max) rows.push({ f, m });
       });
     });
-    downloadCsv(`age_${min}_to_${max}.csv`, rows);
+    downloadPdf(`age_${min}_to_${max}.pdf`, `Age Group: ${min}–${max}`, rows);
   });
   document.getElementById("exp-disease").addEventListener("click", () => {
     const rows = [];
@@ -798,11 +953,20 @@ function renderExportTab(main) {
         if (m.disease && m.disease.trim() && m.disease.trim().toLowerCase() !== "none") rows.push({ f, m });
       });
     });
-    downloadCsv("health_conditions.csv", rows);
+    downloadPdf("health_conditions.pdf", "People With a Health Condition", rows);
+  });
+  document.getElementById("exp-pregnant").addEventListener("click", () => {
+    const rows = [];
+    state.families.forEach((f) => {
+      (state.membersByFamily[f.id] || []).forEach((m) => {
+        if (m.is_pregnant) rows.push({ f, m });
+      });
+    });
+    downloadPdf("pregnant_women.pdf", "Pregnant Women", rows);
   });
   document.getElementById("exp-all").addEventListener("click", () => {
-    downloadCsv("all_records.csv", buildRows(state.families));
+    downloadPdf("all_records.pdf", "All Records", buildRows(state.families));
   });
 }
- 
+
 init();
