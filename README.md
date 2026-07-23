@@ -78,16 +78,39 @@ to get in. Still, please keep in mind:
 
 ## Using the app
 
-- **Add family** — enter house details, then add one or more members
-  (name, role, gender, age, phone, Aadhar, job, health condition).
-- **View & manage** — search by name/house no/phone/area, sort by house
-  name/no/area/newest, filter by area, filter by an age range (or use it
-  alongside the disease filter), and edit or delete any household or
-  member inline.
-- **Export data** — download CSV files: alphabetical (A–Z or Z–A), by
-  house no, grouped by (or filtered to) one area, by an age group (presets
-  like 1–18, or a custom range), people with a health condition only, or
-  the full dataset. CSV files open directly in Excel or Google Sheets.
+- **Add family** — enter house details, then add one or more members: name,
+  a detailed relationship **role** (House Owner, Father, Mother, Wife,
+  Husband's Sister, Wife's Father, and many more — matching how relations
+  are described on ration cards), gender, **date of birth** (age is
+  calculated automatically and always stays correct — you never re-enter
+  it), phone, Aadhar, job, and health condition. If gender is Female, you
+  can also mark **Currently pregnant** and enter the pregnancy start date
+  (LMP) — the current month of pregnancy is calculated automatically and
+  keeps advancing on its own as time passes.
+- **View & manage** — search (now also matches role and pregnancy status),
+  sort by house name/no/area/newest, filter by area, filter by an age
+  range (calculated from date of birth), filter to only people with a
+  health condition, filter to only pregnant women, and edit or delete any
+  household or member inline. The view only shows the calculated **age**
+  (not the raw date of birth) to keep the list easy to scan.
+- **Export data** — download **PDF** files: alphabetical (A–Z or Z–A), by
+  house no, grouped by (or filtered to) one area, by age group (presets
+  like 1–18, or a custom range — calculated from date of birth), health
+  conditions only, pregnant women only (with their auto-calculated
+  month), or everything. Every PDF includes **both** the date of birth and
+  the calculated age (and both the pregnancy start date and calculated
+  month), so the numbers are always traceable back to the original dates.
+
+## If you set this up before (important one-time step)
+
+An earlier version of this app stored a plain "age" number instead of a
+date of birth. If your Supabase project already has the old tables,
+re-run `supabase-schema.sql` in the SQL Editor — it now includes a safe
+migration that adds the new date-of-birth and pregnancy columns and
+removes the old ones, without deleting any of your households. You'll
+just need to re-enter each person's date of birth (and pregnancy start
+date, if relevant) once, since an exact birth date can't be recovered
+from an age in years.
 
 ## Troubleshooting
 
