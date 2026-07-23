@@ -110,6 +110,8 @@ function escapeHtml(str) {
 // ------------------------------------------------------------
 // BOOTSTRAP
 // ------------------------------------------------------------
+let dataLoaded = false;
+
 function init() {
   if (!window.supabase || !SUPABASE_URL || SUPABASE_URL.startsWith("PASTE_")) {
     renderSetupNeeded();
@@ -120,19 +122,26 @@ function init() {
   sb.auth.getSession().then(({ data }) => {
     session = data.session;
     if (session) {
+      dataLoaded = true;
       loadData();
     } else {
       renderLogin();
     }
   });
 
-  sb.auth.onAuthStateChange((_event, newSession) => {
+  sb.auth.onAuthStateChange((event, newSession) => {
     session = newSession;
-    if (session) {
-      loadData();
-    } else {
+    if (event === "SIGNED_OUT") {
+      dataLoaded = false;
       renderLogin();
+    } else if (event === "SIGNED_IN" && !dataLoaded) {
+      // Only reload on a genuine new sign-in, not on background token
+      // refreshes that fire when the tab regains focus.
+      dataLoaded = true;
+      loadData();
     }
+    // TOKEN_REFRESHED / USER_UPDATED / INITIAL_SESSION etc. are ignored
+    // here on purpose — the session variable above is still kept fresh.
   });
 }
 
